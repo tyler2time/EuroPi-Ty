@@ -6,13 +6,44 @@ register is full, it will drop the oldest value and shift the rest of the values
 
 from europi import *
 from europi_script import EuroPiScript
+from time import sleep_ms
 
 import random
+
+try:
+    # local dev
+    from software.firmware.europi import (
+        MAX_INPUT_VOLTAGE,
+        OLED_HEIGHT,
+        OLED_WIDTH,
+        ain,
+        b1,
+        b2,
+        cv1,
+        cv2,
+        cv4,
+        din,
+        k1,
+        k2,
+        oled,
+    )
+except ImportError:
+    from europi import MAX_INPUT_VOLTAGE, OLED_HEIGHT, OLED_WIDTH, ain, b1, b2, cv1, cv2, cv4, din, k1, k2, oled
+
+MAX_RATE = OLED_WIDTH
+Y_TRUE = int(OLED_HEIGHT / 3 * 2)
+Y_FALSE = int(OLED_HEIGHT / 3)
+D_WAVE_HEIGHT = Y_TRUE - Y_FALSE + 1
+RIGHT_EDGE = OLED_WIDTH - 1
+Y_PIXELS = OLED_HEIGHT - 1
 
 # Create a list to hold the values. To avoid errors we will populate the list with random values
 values = [random.uniform(0, 1) for _ in range(6)]
 # Create a variable to hold the current voltage
 current_voltage = 0
+
+offset = 0
+scale = 1
 
 flag = False
 
@@ -21,52 +52,45 @@ class GetShifty(EuroPiScript):
         super().__init__()
 
     def oled_display(self):
-        global current_voltage, values
+        global current_voltage, values, offset, scale, old_value
+        self.handle_knobs()
+        oled.fill(0)       
+        # Draw the current voltage
         location_y = 0
         location_x = 0
         oled.fill(0)
+        y_value = 0
         for i in range(len(values)):
-            location_x += 15
-            location_y = 16
-            if location_x > 128:
-                location_x = 15
+            location_y = 10
+            y_value = (values[i] * 3)
+            location_x = i * 18
+            oled.fill_rect(location_x, location_y, 18, round(y_value), 1)
+            oled.rect(location_x, location_y, 18, 32, 0)
+        # Draw the current voltage
+        oled.text(str(current_voltage), 0, 0, 1)
+        # Draw the offset
+        oled.text("O: " + str(offset), 40, 0, 1)
+        # Draw the scale
+        oled.text("Scl: " + str(scale), 80, 0, 1)
 
-            shape_size = int(values[i] * 5 + 3)
-            for x in range(location_x - shape_size//2, location_x + shape_size//2):
-                for y in range(location_y - shape_size//2, location_y + shape_size//2):
-                    if (x - location_x)**2 + (y - location_y)**2 <= (shape_size//2)**2:
-                        oled.pixel(x, y, 1)
         oled.show()
     
-        '''     
-        def oled_display(self, current_voltage, values):
-        location_y = 0
-        location_x = 0
-        oled.fill(0)
-        for i in range(len(values)):
-            location_x += 15
-            if location_x > 128:
-                location_x = 15
-                location_y += 15
-            shape_size = int(values[i] * 5)
-            if i == 0:
-                oled.rect(location_x, location_y, shape_size, 24, 1)
-            elif i == 1:
-                oled.rect(location_x, location_y, shape_size, 24, 1)
-            elif i == 2:
-                oled.rect(location_x, location_y, shape_size, 24, 1)
-            elif i == 3:
-                oled.rect(location_x, location_y, shape_size, 24, 1)
-            elif i == 4:
-                oled.rect(location_x, location_y, shape_size, 24, 1)
-            elif i == 5:
-                oled.rect(location_x, location_y, shape_size, 24, 1)
-        oled.show()
-        '''
-        
+  
+
+    def handle_knobs(self):
+        global current_voltage, values, offset, scale
+        # Handle knob 1
+        offset = k1.choice([-3, -2, -1, 0, 1, 2, 3])
+        # Handle knob 2
+        scale = k2.choice([0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2])
+
     def get_voltage(self):
-        global current_voltage, values
+        global current_voltage, values, offset, scale
+        self.handle_knobs()
         current_voltage = ain.read_voltage()
+        current_voltage = current_voltage + offset
+        current_voltage = current_voltage * scale
+        #current_voltage = current_voltage * scale
         # If the array is full, remove the oldest value
         if len(values) > 6:
             values.pop(0)
@@ -82,7 +106,8 @@ class GetShifty(EuroPiScript):
 
 
     def main(self):
-        global current_voltage, values
+        global current_voltage, values, old_value
+        old_value = din.value()
         @din.handler
         def on_rising_clock():
             self.get_voltage()
@@ -95,6 +120,9 @@ class GetShifty(EuroPiScript):
         def on_b2_press():
             values = [0] * 6
             self.get_voltage()
+        while True:
+            self.oled_display()
+            sleep_ms(10)
         
 
         #self.oled_display(current_voltage, values)
@@ -103,3 +131,7 @@ class GetShifty(EuroPiScript):
 
 if __name__ == '__main__':
     GetShifty().main()
+
+
+
+  
